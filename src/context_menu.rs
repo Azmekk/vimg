@@ -64,38 +64,56 @@ mod windows_impl {
     }
 
     fn write_shared_menus(exe: &str) -> Result<()> {
-        write_command(
-            &format!(r"{SHARED_MENU_KEY}\shell\01-png\command"),
+        write_verb(
+            &format!(r"{SHARED_MENU_KEY}\shell\01-png"),
+            "Convert to PNG",
             &format!("\"{exe}\" \"%1\" -f png"),
+            None,
         )?;
-        write_command(
-            &format!(r"{SHARED_MENU_KEY}\shell\02-jpg\command"),
+        write_verb(
+            &format!(r"{SHARED_MENU_KEY}\shell\02-jpg"),
+            "Convert to JPG",
             &format!("\"{exe}\" \"%1\" -f jpg"),
+            None,
         )?;
-        write_command(
-            &format!(r"{SHARED_MENU_KEY}\shell\03-webp\command"),
+        write_verb(
+            &format!(r"{SHARED_MENU_KEY}\shell\03-webp"),
+            "Convert to WebP",
             &format!("\"{exe}\" \"%1\" -f webp"),
+            None,
         )?;
-        write_command(
-            &format!(r"{SHARED_MENU_KEY}\shell\04-avif\command"),
+        write_verb(
+            &format!(r"{SHARED_MENU_KEY}\shell\04-avif"),
+            "Convert to AVIF",
             &format!("\"{exe}\" \"%1\" -f avif"),
+            None,
         )?;
-
         // "Optimize" — preceded by a separator (CommandFlags = 0x40).
-        let opt_key = CURRENT_USER
-            .create(format!(r"{SHARED_MENU_KEY}\shell\05-opt"))
-            .map_err(|e| anyhow!("creating opt key: {e}"))?;
-        opt_key
-            .set_string("MUIVerb", "Optimize")
-            .map_err(|e| anyhow!("setting MUIVerb: {e}"))?;
-        opt_key
-            .set_u32("CommandFlags", 0x40)
-            .map_err(|e| anyhow!("setting CommandFlags: {e}"))?;
-        write_command(
-            &format!(r"{SHARED_MENU_KEY}\shell\05-opt\command"),
+        write_verb(
+            &format!(r"{SHARED_MENU_KEY}\shell\05-opt"),
+            "Optimize",
             &format!("\"{exe}\" \"%1\""),
+            Some(0x40),
         )?;
+        Ok(())
+    }
 
+    fn write_verb(
+        verb_path: &str,
+        label: &str,
+        command: &str,
+        command_flags: Option<u32>,
+    ) -> Result<()> {
+        let key = CURRENT_USER
+            .create(verb_path)
+            .map_err(|e| anyhow!("creating {verb_path}: {e}"))?;
+        key.set_string("MUIVerb", label)
+            .map_err(|e| anyhow!("setting MUIVerb on {verb_path}: {e}"))?;
+        if let Some(flags) = command_flags {
+            key.set_u32("CommandFlags", flags)
+                .map_err(|e| anyhow!("setting CommandFlags on {verb_path}: {e}"))?;
+        }
+        write_command(&format!(r"{verb_path}\command"), command)?;
         Ok(())
     }
 

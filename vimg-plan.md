@@ -134,14 +134,14 @@ HKCU\Software\Classes\SystemFileAssociations\<.ext>\shell\vimg
     ExtendedSubCommandsKey = "vimg.Menu"        ; HKCR-relative ProgID name
 
 HKCU\Software\Classes\vimg.Menu\shell
-    \01-png\command   →  "<exe>" "%1" -f png
-    \02-jpg\command   →  "<exe>" "%1" -f jpg
-    \03-webp\command  →  "<exe>" "%1" -f webp
-    \04-avif\command  →  "<exe>" "%1" -f avif
+    \01-png   MUIVerb = "Convert to PNG"   \command → "<exe>" "%1" -f png
+    \02-jpg   MUIVerb = "Convert to JPG"   \command → "<exe>" "%1" -f jpg
+    \03-webp  MUIVerb = "Convert to WebP"  \command → "<exe>" "%1" -f webp
+    \04-avif  MUIVerb = "Convert to AVIF"  \command → "<exe>" "%1" -f avif
     \05-opt
         MUIVerb        = "Optimize"
         CommandFlags   = 0x40                      ; preceding separator
-    \05-opt\command   →  "<exe>" "%1"
+        \command       →  "<exe>" "%1"
 ```
 
 Register the extension pointer under each of `.png`, `.jpg`, `.jpeg`, `.webp`, `.avif`, `.gif`, `.bmp`, `.tif`, `.tiff`. The shared `vimg.Menu` key is written once.
