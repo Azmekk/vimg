@@ -92,18 +92,18 @@ fn optimize(path: &Path, cfg: &Config) -> Result<PathBuf> {
             convert::encode_to_bytes(&img, format, cfg.quality)?
         }
     };
-    if optimized.len() >= bytes.len() {
-        eprintln!(
-            "vimg: {}: no size improvement ({} -> {} bytes); not writing a copy.",
-            path.display(),
-            bytes.len(),
-            optimized.len()
-        );
-        return Ok(path.to_path_buf());
-    }
+    // If the optimizer couldn't beat the original (already-compressed source,
+    // lossy regression), keep the original bytes so the sibling is never larger
+    // than the source. We still create the file so the user always sees output
+    // — important when invoked from the context menu where stderr is hidden.
+    let final_bytes = if optimized.len() < bytes.len() {
+        optimized
+    } else {
+        bytes
+    };
     let out = resolve_optimize_output(path, cfg)?;
     ensure_parent_exists(&out)?;
-    atomic_write(&out, &optimized)?;
+    atomic_write(&out, &final_bytes)?;
     Ok(out)
 }
 
