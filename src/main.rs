@@ -30,7 +30,7 @@ fn main() -> Result<()> {
         std::process::exit(2);
     }
 
-    let cfg = pipeline::Config::from_cli(&cli)?;
+    let cfg = pipeline::Config::from_cli(&cli, &files)?;
     let failures = pipeline::run(&files, &cfg)?;
 
     if !failures.is_empty() {

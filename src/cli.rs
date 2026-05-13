@@ -17,8 +17,13 @@ pub struct Cli {
     pub format: Option<Format>,
 
     /// Output directory. Defaults to alongside each input file.
-    #[arg(short, long)]
+    #[arg(short, long, conflicts_with = "to_folder")]
     pub output: Option<PathBuf>,
+
+    /// Place outputs into a sibling "<source-folder>_optimized" directory.
+    /// Useful when batch-converting multiple files. Conflicts with -o.
+    #[arg(long)]
+    pub to_folder: bool,
 
     /// Quality (1-100). Format-specific defaults apply when omitted.
     #[arg(short, long)]

@@ -17,13 +17,24 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn from_cli(cli: &Cli) -> Result<Self> {
-        if let Some(dir) = &cli.output
-            && !dir.exists()
-        {
-            fs::create_dir_all(dir)
-                .with_context(|| format!("creating output dir {}", dir.display()))?;
-        }
+    pub fn from_cli(cli: &Cli, files: &[PathBuf]) -> Result<Self> {
+        let output = if cli.to_folder {
+            let first = files
+                .first()
+                .ok_or_else(|| anyhow!("--to-folder requires at least one input file"))?;
+            let folder = unique_batch_folder(first)?;
+            fs::create_dir_all(&folder)
+                .with_context(|| format!("creating batch folder {}", folder.display()))?;
+            Some(folder)
+        } else {
+            if let Some(dir) = &cli.output
+                && !dir.exists()
+            {
+                fs::create_dir_all(dir)
+                    .with_context(|| format!("creating output dir {}", dir.display()))?;
+            }
+            cli.output.clone()
+        };
         if let Some(q) = cli.quality
             && !(1..=100).contains(&q)
         {
@@ -31,7 +42,7 @@ impl Config {
         }
         Ok(Self {
             format: cli.format,
-            output: cli.output.clone(),
+            output,
             quality: cli.quality,
         })
     }
@@ -86,16 +97,11 @@ fn optimize(path: &Path, cfg: &Config) -> Result<PathBuf> {
     let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
     let optimized = match format {
         Format::Png => optimize::optimize_png_in_memory(&bytes)?,
-        // Lossy round-trip for the other formats.
         Format::Jpg | Format::Webp | Format::Avif => {
             let img = convert::decode(path)?;
             convert::encode_to_bytes(&img, format, cfg.quality)?
         }
     };
-    // If the optimizer couldn't beat the original (already-compressed source,
-    // lossy regression), keep the original bytes so the sibling is never larger
-    // than the source. We still create the file so the user always sees output
-    // — important when invoked from the context menu where stderr is hidden.
     let final_bytes = if optimized.len() < bytes.len() {
         optimized
     } else {
@@ -110,7 +116,14 @@ fn optimize(path: &Path, cfg: &Config) -> Result<PathBuf> {
 fn convert_to(input: &Path, target: Format, cfg: &Config) -> Result<PathBuf> {
     let img = convert::decode(input)?;
     let encoded = convert::encode_to_bytes(&img, target, cfg.quality)?;
-    let out = convert::resolve_output(input, Some(target), cfg.output.as_deref())?;
+    let mut out = convert::resolve_output(input, Some(target), cfg.output.as_deref())?;
+    // If -o is set and the candidate output equals the input, fall back to a
+    // sibling with a numeric suffix so the original is never clobbered.
+    if std::path::absolute(&out).unwrap_or(out.clone())
+        == std::path::absolute(input).unwrap_or(input.to_path_buf())
+    {
+        out = unique_path(&out);
+    }
     ensure_parent_exists(&out)?;
     atomic_write(&out, &encoded)?;
     Ok(out)
@@ -125,23 +138,85 @@ fn resolve_optimize_output(input: &Path, cfg: &Config) -> Result<PathBuf> {
         let candidate_abs = std::path::absolute(&candidate).unwrap_or_else(|_| candidate.clone());
         let input_abs = std::path::absolute(input).unwrap_or_else(|_| input.to_path_buf());
         if candidate_abs != input_abs {
-            return Ok(candidate);
+            return Ok(unique_path(&candidate));
         }
     }
-    Ok(with_optimized_suffix(input))
+    Ok(unique_optimized_sibling(input))
 }
 
-fn with_optimized_suffix(input: &Path) -> PathBuf {
+fn unique_optimized_sibling(input: &Path) -> PathBuf {
     let parent = input.parent().unwrap_or(Path::new(""));
     let stem = input
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("output");
-    let new_name = match input.extension().and_then(|e| e.to_str()) {
-        Some(ext) if !ext.is_empty() => format!("{stem}.optimized.{ext}"),
-        _ => format!("{stem}.optimized"),
+    let ext = input.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let build = |suffix: &str| -> PathBuf {
+        let name = if ext.is_empty() {
+            format!("{stem}.optimized{suffix}")
+        } else {
+            format!("{stem}.optimized{suffix}.{ext}")
+        };
+        parent.join(name)
     };
-    parent.join(new_name)
+    let first = build("");
+    if !first.exists() {
+        return first;
+    }
+    for n in 1..u32::MAX {
+        let candidate = build(&n.to_string());
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    first
+}
+
+fn unique_path(path: &Path) -> PathBuf {
+    if !path.exists() {
+        return path.to_path_buf();
+    }
+    let parent = path.parent().unwrap_or(Path::new(""));
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("output");
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    for n in 1..u32::MAX {
+        let name = if ext.is_empty() {
+            format!("{stem}{n}")
+        } else {
+            format!("{stem}{n}.{ext}")
+        };
+        let candidate = parent.join(name);
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    path.to_path_buf()
+}
+
+fn unique_batch_folder(first_input: &Path) -> Result<PathBuf> {
+    let parent = first_input
+        .parent()
+        .ok_or_else(|| anyhow!("input {} has no parent", first_input.display()))?;
+    let folder_name = parent
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Images");
+    let grandparent = parent.parent().unwrap_or(parent);
+    let base = format!("{folder_name}_optimized");
+    let first = grandparent.join(&base);
+    if !first.exists() {
+        return Ok(first);
+    }
+    for n in 1..u32::MAX {
+        let candidate = grandparent.join(format!("{base}{n}"));
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Ok(first)
 }
 
 fn ensure_parent_exists(out: &Path) -> Result<()> {
@@ -165,6 +240,9 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
         f.write_all(bytes)
             .with_context(|| format!("writing {}", tmp.display()))?;
         f.sync_all().ok();
+    }
+    if path.exists() {
+        let _ = fs::remove_file(path);
     }
     fs::rename(&tmp, path)
         .with_context(|| format!("renaming {} -> {}", tmp.display(), path.display()))?;

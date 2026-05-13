@@ -36,8 +36,11 @@ vimg *.png                        # optimize a batch in parallel
 vimg photo.png -f webp            # convert; writes photo.webp next to the original
 vimg photo.png -f avif -q 75      # convert at a specific quality
 vimg *.jpg -f webp -o ./out       # batch convert into ./out
+vimg *.jpg -f webp --to-folder    # batch convert into <folder>_optimized/
 vimg **/*.png                     # recurse into subfolders
 ```
+
+Outputs never overwrite existing files: vimg appends numeric suffixes (`name.optimized.png`, `name.optimized1.png`, `name.optimized2.png`, …) and `--to-folder` creates `<folder>_optimized`, `<folder>_optimized1`, `<folder>_optimized2`, … as needed.
 
 Without `-f`, vimg **optimizes the file and writes a sibling copy** (`name.optimized.ext`) — the original is never touched. With `-o <dir>` the copy goes into that directory with the original filename. If `-f <ext>` matches the source extension, vimg prints a notice and falls through to the optimize path automatically. If the optimized result isn't smaller than the input, no copy is written.
 
