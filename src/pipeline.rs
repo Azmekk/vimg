@@ -64,40 +64,94 @@ pub fn run(files: &[PathBuf], cfg: &Config) -> Result<Vec<(PathBuf, anyhow::Erro
 
 fn process_one(input: &Path, cfg: &Config) -> Result<PathBuf> {
     match cfg.format {
-        None => optimize_in_place(input),
-        Some(target) => convert_to(input, target, cfg),
+        None => optimize(input, cfg),
+        Some(target) => {
+            let src_fmt = optimize::detect_format(input).ok();
+            if src_fmt == Some(target) {
+                eprintln!(
+                    "vimg: {}: -f {} matches the source format. Optimization is the right choice here — running that instead. (Drop -f to silence.)",
+                    input.display(),
+                    target.extension()
+                );
+                optimize(input, cfg)
+            } else {
+                convert_to(input, target, cfg)
+            }
+        }
     }
 }
 
-fn optimize_in_place(path: &Path) -> Result<PathBuf> {
+fn optimize(path: &Path, cfg: &Config) -> Result<PathBuf> {
     let format = optimize::detect_format(path)?;
     let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
     let optimized = match format {
         Format::Png => optimize::optimize_png_in_memory(&bytes)?,
-        // Other formats: re-encode through the decoder. Lossy.
+        // Lossy round-trip for the other formats.
         Format::Jpg | Format::Webp | Format::Avif => {
             let img = convert::decode(path)?;
-            convert::encode_to_bytes(&img, format, None)?
+            convert::encode_to_bytes(&img, format, cfg.quality)?
         }
     };
-    if optimized.len() < bytes.len() {
-        atomic_write(path, &optimized)?;
+    if optimized.len() >= bytes.len() {
+        eprintln!(
+            "vimg: {}: no size improvement ({} -> {} bytes); not writing a copy.",
+            path.display(),
+            bytes.len(),
+            optimized.len()
+        );
+        return Ok(path.to_path_buf());
     }
-    Ok(path.to_path_buf())
+    let out = resolve_optimize_output(path, cfg)?;
+    ensure_parent_exists(&out)?;
+    atomic_write(&out, &optimized)?;
+    Ok(out)
 }
 
 fn convert_to(input: &Path, target: Format, cfg: &Config) -> Result<PathBuf> {
     let img = convert::decode(input)?;
     let encoded = convert::encode_to_bytes(&img, target, cfg.quality)?;
     let out = convert::resolve_output(input, Some(target), cfg.output.as_deref())?;
+    ensure_parent_exists(&out)?;
+    atomic_write(&out, &encoded)?;
+    Ok(out)
+}
+
+fn resolve_optimize_output(input: &Path, cfg: &Config) -> Result<PathBuf> {
+    let filename = input
+        .file_name()
+        .ok_or_else(|| anyhow!("no filename in {}", input.display()))?;
+    if let Some(dir) = &cfg.output {
+        let candidate = dir.join(filename);
+        let candidate_abs = std::path::absolute(&candidate).unwrap_or_else(|_| candidate.clone());
+        let input_abs = std::path::absolute(input).unwrap_or_else(|_| input.to_path_buf());
+        if candidate_abs != input_abs {
+            return Ok(candidate);
+        }
+    }
+    Ok(with_optimized_suffix(input))
+}
+
+fn with_optimized_suffix(input: &Path) -> PathBuf {
+    let parent = input.parent().unwrap_or(Path::new(""));
+    let stem = input
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("output");
+    let new_name = match input.extension().and_then(|e| e.to_str()) {
+        Some(ext) if !ext.is_empty() => format!("{stem}.optimized.{ext}"),
+        _ => format!("{stem}.optimized"),
+    };
+    parent.join(new_name)
+}
+
+fn ensure_parent_exists(out: &Path) -> Result<()> {
     if let Some(parent) = out.parent()
         && !parent.as_os_str().is_empty()
         && !parent.exists()
     {
         fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
     }
-    atomic_write(&out, &encoded)?;
-    Ok(out)
+    Ok(())
 }
 
 fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {

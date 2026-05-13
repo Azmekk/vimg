@@ -31,13 +31,17 @@ vimg fetches the latest release and replaces its own binary in place. No need to
 ## Usage
 
 ```bash
-vimg photo.png                    # optimize in place (lossless for PNG)
+vimg photo.png                    # writes photo.optimized.png next to the original
 vimg *.png                        # optimize a batch in parallel
 vimg photo.png -f webp            # convert; writes photo.webp next to the original
 vimg photo.png -f avif -q 75      # convert at a specific quality
 vimg *.jpg -f webp -o ./out       # batch convert into ./out
 vimg **/*.png                     # recurse into subfolders
 ```
+
+Without `-f`, vimg **optimizes the file and writes a sibling copy** (`name.optimized.ext`) — the original is never touched. With `-o <dir>` the copy goes into that directory with the original filename. If `-f <ext>` matches the source extension, vimg prints a notice and falls through to the optimize path automatically. If the optimized result isn't smaller than the input, no copy is written.
+
+With `-f` (a different format), the original is preserved and a new file is written with the target extension.
 
 Glob patterns (`*`, `?`, `[...]`, `**`) are expanded by vimg itself, so they work the same on Windows PowerShell as they do in bash. On Windows, matching is case-insensitive — `*.jpg` matches `.JPG` too.
 
@@ -46,8 +50,6 @@ Glob patterns (`*`, `?`, `[...]`, `**`) are expanded by vimg itself, so they wor
 | `-f, --format` | Target format: `png`, `jpg`, `webp`, `avif` |
 | `-q, --quality` | Quality 1–100 (lossy formats only) |
 | `-o, --output` | Output directory (defaults to alongside the input) |
-
-Without `-f`, vimg optimizes the file in place. With `-f`, the original is preserved and a new file is written with the target extension.
 
 Per-format defaults: PNG runs through `oxipng`; JPEG and WebP use quality 85; AVIF uses quality 80 at `ravif` speed 6.
 
