@@ -130,7 +130,6 @@ Convert with vimg
 ```
 HKCU\Software\Classes\SystemFileAssociations\<.ext>\shell\vimg
     MUIVerb                = "Convert with vimg"
-    Icon                   = "<install-dir>\vimg.exe,0"
     ExtendedSubCommandsKey = "vimg.Menu"        ; HKCR-relative ProgID name
 
 HKCU\Software\Classes\vimg.Menu\shell
