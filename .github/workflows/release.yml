@@ -1,0 +1,56 @@
+name: release
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: vimg-windows-x86_64
+            archive: zip
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            artifact: vimg-linux-x86_64
+            archive: tar.gz
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install libclang (Linux, for webp bindgen)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libclang-dev
+
+      - run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package (Unix)
+        if: matrix.archive == 'tar.gz'
+        run: |
+          mkdir dist
+          cp target/${{ matrix.target }}/release/vimg dist/
+          tar -czf ${{ matrix.artifact }}.tar.gz -C dist .
+
+      - name: Package (Windows)
+        if: matrix.archive == 'zip'
+        run: |
+          mkdir dist
+          cp target/${{ matrix.target }}/release/vimg.exe dist/
+          Compress-Archive -Path dist/* -DestinationPath ${{ matrix.artifact }}.zip
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ matrix.artifact }}.tar.gz
+            ${{ matrix.artifact }}.zip
+          fail_on_unmatched_files: false
