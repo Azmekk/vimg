@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
@@ -22,10 +22,7 @@ impl Config {
             let first = files
                 .first()
                 .ok_or_else(|| anyhow!("--to-folder requires at least one input file"))?;
-            let folder = unique_batch_folder(first)?;
-            fs::create_dir_all(&folder)
-                .with_context(|| format!("creating batch folder {}", folder.display()))?;
-            Some(folder)
+            Some(claim_or_join_batch_folder(first)?)
         } else {
             if let Some(dir) = &cli.output
                 && !dir.exists()
@@ -117,11 +114,10 @@ fn convert_to(input: &Path, target: Format, cfg: &Config) -> Result<PathBuf> {
     let img = convert::decode(input)?;
     let encoded = convert::encode_to_bytes(&img, target, cfg.quality)?;
     let mut out = convert::resolve_output(input, Some(target), cfg.output.as_deref())?;
-    // If -o is set and the candidate output equals the input, fall back to a
-    // sibling with a numeric suffix so the original is never clobbered.
-    if std::path::absolute(&out).unwrap_or(out.clone())
-        == std::path::absolute(input).unwrap_or(input.to_path_buf())
-    {
+    // Never clobber: bump if the candidate would equal the input or already exists.
+    let candidate_abs = std::path::absolute(&out).unwrap_or(out.clone());
+    let input_abs = std::path::absolute(input).unwrap_or(input.to_path_buf());
+    if candidate_abs == input_abs || out.exists() {
         out = unique_path(&out);
     }
     ensure_parent_exists(&out)?;
@@ -196,27 +192,59 @@ fn unique_path(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
-fn unique_batch_folder(first_input: &Path) -> Result<PathBuf> {
+/// Time window in which sibling processes (started by Explorer for a single
+/// multi-selection right-click) recognize each other and converge on the same
+/// output folder.
+const BATCH_RENDEZVOUS_SECS: u64 = 30;
+
+/// Decide the batch output folder for an input file. The folder is created
+/// inside the input's parent directory and named `<parent>_optimized`. If a
+/// matching folder already exists, sibling vimg processes started within the
+/// rendezvous window join it; otherwise a fresh `_optimized<N>` is created.
+fn claim_or_join_batch_folder(first_input: &Path) -> Result<PathBuf> {
     let parent = first_input
         .parent()
         .ok_or_else(|| anyhow!("input {} has no parent", first_input.display()))?;
     let folder_name = parent
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("Images");
-    let grandparent = parent.parent().unwrap_or(parent);
+        .unwrap_or("images");
     let base = format!("{folder_name}_optimized");
-    let first = grandparent.join(&base);
-    if !first.exists() {
-        return Ok(first);
+
+    if let Some(p) = try_claim_or_join(parent, &base)? {
+        return Ok(p);
     }
     for n in 1..u32::MAX {
-        let candidate = grandparent.join(format!("{base}{n}"));
-        if !candidate.exists() {
-            return Ok(candidate);
+        if let Some(p) = try_claim_or_join(parent, &format!("{base}{n}"))? {
+            return Ok(p);
         }
     }
-    Ok(first)
+    Err(anyhow!("ran out of batch folder suffixes"))
+}
+
+fn try_claim_or_join(parent: &Path, folder_name: &str) -> Result<Option<PathBuf>> {
+    let candidate = parent.join(folder_name);
+    match fs::create_dir(&candidate) {
+        Ok(()) => Ok(Some(candidate)),
+        Err(e) if e.kind() == ErrorKind::AlreadyExists => {
+            if is_recent_dir(&candidate, BATCH_RENDEZVOUS_SECS) {
+                Ok(Some(candidate))
+            } else {
+                Ok(None)
+            }
+        }
+        Err(e) => Err(anyhow::Error::from(e)
+            .context(format!("creating batch folder {}", candidate.display()))),
+    }
+}
+
+fn is_recent_dir(path: &Path, window_secs: u64) -> bool {
+    fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .map(|age| age.as_secs() <= window_secs)
+        .unwrap_or(false)
 }
 
 fn ensure_parent_exists(out: &Path) -> Result<()> {
