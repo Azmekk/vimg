@@ -109,7 +109,7 @@ mod windows_impl {
         let exe = exe_path()?;
         key.set_string("Icon", &format!("{exe},0"))
             .map_err(|e| anyhow!("setting Icon: {e}"))?;
-        key.set_string("ExtendedSubCommandsKey", r"Software\Classes\vimg.Menu")
+        key.set_string("ExtendedSubCommandsKey", "vimg.Menu")
             .map_err(|e| anyhow!("setting ExtendedSubCommandsKey: {e}"))?;
         Ok(())
     }
