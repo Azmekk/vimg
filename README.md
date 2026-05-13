@@ -20,6 +20,14 @@ curl -fsSL https://raw.githubusercontent.com/Azmekk/vimg/master/install.sh | bas
 
 Both scripts grab the latest release from GitHub and drop `vimg` on your PATH.
 
+To update later, just run:
+
+```
+vimg --update
+```
+
+vimg fetches the latest release and replaces its own binary in place. No need to re-run the install script.
+
 ## Usage
 
 ```bash

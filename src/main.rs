@@ -4,6 +4,7 @@ mod convert;
 mod expand;
 mod optimize;
 mod pipeline;
+mod update;
 
 use anyhow::Result;
 use clap::Parser;
@@ -13,6 +14,9 @@ use cli::Cli;
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    if cli.update {
+        return update::run();
+    }
     if cli.enable_context_menu {
         return context_menu::enable();
     }

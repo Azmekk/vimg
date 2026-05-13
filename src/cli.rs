@@ -31,6 +31,10 @@ pub struct Cli {
     /// Remove the Windows Explorer context menu entries (Windows only).
     #[arg(long)]
     pub disable_context_menu: bool,
+
+    /// Replace this binary with the latest GitHub release.
+    #[arg(long)]
+    pub update: bool,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
