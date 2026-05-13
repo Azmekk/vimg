@@ -28,7 +28,10 @@ vimg *.png                        # optimize a batch in parallel
 vimg photo.png -f webp            # convert; writes photo.webp next to the original
 vimg photo.png -f avif -q 75      # convert at a specific quality
 vimg *.jpg -f webp -o ./out       # batch convert into ./out
+vimg **/*.png                     # recurse into subfolders
 ```
+
+Glob patterns (`*`, `?`, `[...]`, `**`) are expanded by vimg itself, so they work the same on Windows PowerShell as they do in bash. On Windows, matching is case-insensitive — `*.jpg` matches `.JPG` too.
 
 | Flag | Meaning |
 |---|---|

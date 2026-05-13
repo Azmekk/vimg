@@ -1,6 +1,7 @@
 mod cli;
 mod context_menu;
 mod convert;
+mod expand;
 mod optimize;
 mod pipeline;
 
@@ -19,13 +20,14 @@ fn main() -> Result<()> {
         return context_menu::disable();
     }
 
-    if cli.files.is_empty() {
+    let files = expand::expand(&cli.files)?;
+    if files.is_empty() {
         eprintln!("vimg: no input files. Run `vimg --help` for usage.");
         std::process::exit(2);
     }
 
     let cfg = pipeline::Config::from_cli(&cli)?;
-    let failures = pipeline::run(&cli.files, &cfg)?;
+    let failures = pipeline::run(&files, &cfg)?;
 
     if !failures.is_empty() {
         for (path, err) in &failures {
